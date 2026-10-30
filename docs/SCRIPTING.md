@@ -1,81 +1,92 @@
-# Luau scripting surface and limitations
+# Luau profiles
 
-TinyHook embeds Luau in the native host only. The Windows client and injected DLL
-do not contain Luau. Scripts describe immutable hook specifications and may
-transform text after the DLL has copied it out of the target process.
+Profiles describe where to capture text and how to filter it. The host runs
+Luau after the DLL copies text from the game. Hook callbacks in the game execute
+native extraction rules.
 
-## Top-level profile table
+## Profile table
 
 ```lua
 return {
-    id = "engine-version-x86",
-    engine = "Engine version",
+    id = "my-engine-x86",
+    engine = "My engine",
     processes = { "Game.exe" },
-    hooks = { ... },
-    on_text = function(text, event) ... end,
+    hooks = {
+        {
+            name = "dialogue",
+            arch = "x86",
+            module = "",
+            symbol = "DrawDialogue",
+            source = "stack",
+            stack_offset = 4,
+            encoding = "utf16",
+            max_bytes = 8192,
+        },
+    },
+    on_text = function(text, event)
+        return text
+    end,
 }
 ```
 
-`id`, `engine`, and `processes` are detection metadata. They do not grant access
-to the process or change extraction behavior. `processes` is a priority hint;
-profile hooks still have to resolve in the target.
+Replace the example locator and extraction rules with ones for the target game.
+See [engine detection](ENGINE-DETECTION.md) for `id`, `engine`, and `processes`.
 
-## What scripts can do
+## Hook fields
 
-- declare up to 16 native capture hooks;
-- locate hooks by one symbol, RVA, or executable-section byte pattern;
-- choose supported x86/x64 registers or a target-width stack slot as the text
-  source;
-- follow up to eight bounded pointer dereferences and one final signed offset;
-- decode UTF-8, UTF-16, or CP932 captures;
-- use the specific x86 `msvc_wstring32` string-object reader;
-- filter/transform copied UTF-8 text in `on_text` and return a string or `nil`;
-- inspect `event.pid`, `event.tid`, `event.hook`, and `event.hook_id`.
+| Field | Meaning |
+| --- | --- |
+| `name` | Unique hook label. |
+| `arch` | `"x86"` or `"x64"`; defaults to `"x64"`. |
+| `module` | Loaded module filename; `""` selects the main executable. |
+| `symbol`, `rva`, `pattern` | Set exactly one locator. Patterns use hexadecimal bytes and `??` wildcards, and must match once in executable PE sections. |
+| `hook_offset` | Signed byte offset from the located address; defaults to 0. |
+| `point` | `"entry"` or `"mid"`; mid-function hooks require x86. |
+| `expected` | Byte pattern checked at the final hook address. Required for x86 mid-function hooks unless the locator pattern contains at least 12 concrete bytes. |
+| `source` | An x86/x64 general register, or `"stack"`. |
+| `stack_offset` | For `"stack"`, read a target-width pointer at the original stack pointer plus this offset. Defaults to 4 on x86 and 40 on x64. |
+| `deref` | Up to eight signed pointer-chain offsets. |
+| `add` | Final signed byte offset after dereferences. |
+| `layout` | `"cstring"` or `"msvc_wstring32"`, the x86 wide-string object layout used by the Siglus profile. |
+| `encoding` | `"utf16"`, `"utf8"`, or `"cp932"`. |
+| `max_bytes` | Capture limit, from 2 to 8192; must be even for UTF-16. Oversized explicit-length strings are dropped. |
 
-## What scripts cannot do
+The x86 register names are `eax ecx edx ebx ebp esi edi esp`. The x64 names are
+`rax rcx rdx rbx rbp rsi rdi rsp r8 r9 r10 r11 r12 r13 r14 r15`.
 
-- read or write arbitrary target memory from Luau;
-- call Windows APIs, native functions, or arbitrary addresses from Luau;
-- install/remove hooks dynamically from `on_text`;
-- implement Frida-style `onEnter`/`onLeave` JavaScript callbacks;
-- inspect live CPU registers from Luau; extraction rules run natively first;
-- create new network connections, files, subprocesses, or OS resources through
-  the sandboxed standard library;
-- bypass the 50 ms callback budget or the host's output-size limits;
-- express optional/alternative hooks inside one profile. Every hook in a profile
-  is required for automatic detection. Use separate profiles for engine variants;
-- make a process-name hint authoritative. A matching executable name only raises
-  the profile's detection priority.
+## Filtering
 
-## Hard limits
+`on_text(text, event)` receives copied UTF-8 text. Return a string to send it to
+the reader, or `nil` to drop it. `event` contains `pid`, `tid`, `hook` (the name),
+and `hook_id` (a zero-based index). Script errors go to the host log.
 
-- script file: 1 MiB maximum; source compilation path: 256 KiB maximum;
-- profile ID/engine: 128 bytes each;
-- process hints: at most 16, each at most 255 bytes;
-- hooks: at most 16 per profile;
-- byte pattern: at most 256 bytes;
-- pointer dereference chain: at most 8 steps;
-- capture: 2–8192 bytes per hook;
-- stack offset: 0–4096 and aligned to target pointer width;
-- `on_text`: approximately 50 ms execution budget per event;
-- returned text/event protocol frame: 32 KiB maximum.
+Scripts can retain state between events. They cannot access live process memory,
+call native functions, change hooks, or use files, sockets, and subprocesses.
+Every hook in a profile is required during detection; use separate profiles for
+alternative hook sets.
 
-## Architecture restrictions
+## Limits
 
-x86 supports function-entry and guarded mid-function hooks. Mid-function hooks
-must use an x86 profile and either provide `expected` bytes at the final patch
-site or use a pattern selector with at least 12 concrete bytes.
+| Resource | Limit |
+| --- | --- |
+| Script file | 1 MiB; source compilation limited to 256 KiB |
+| Hooks per profile | 16 |
+| Byte pattern | 256 bytes |
+| Pointer chain | 8 steps |
+| Capture per hook | 8192 bytes |
+| Stack offset | 0–4096, aligned to target pointer width |
+| `on_text` execution | Approximately 50 ms per event |
+| Returned text or protocol frame | 32 KiB |
 
-x64 currently supports normal function-entry hooks only. Arbitrary mid-function
-x64 observation, live AVX/AVX-512 preservation, and unwind semantics are outside
-the supported model.
+The x86 gateway preserves general registers, EFLAGS, x87/MMX, XMM0–7, and MXCSR;
+it requires FXSAVE/SSE. AVX/AVX-512 state and exceptional unwinding through the
+observer are unsupported. x64 hooks support normal Win64 function entries.
 
-## Script directory behavior
+## Loading profiles
 
-`th-host --script-dir DIR` loads engine profiles from one directory. A
-compiler-enabled host accepts `.luau` and `.luauc` and prefers source when both
-share a stem. A VM-only host sees `.luauc` only. Invalid profiles or duplicate
-IDs fail host startup instead of being silently skipped.
+A compiler-enabled host accepts `.luau` and `.luauc` files. Source takes
+precedence when both have the same filename stem. A VM-only host accepts
+bytecode. Compile it with `th-compile` from the same Luau revision as the host.
 
-The client never receives Luau bytecode. It receives only profile metadata and
-the serialized native hook specification selected for probing/attachment.
+`--script-dir DIR` reads one directory without recursion. Invalid profiles and
+duplicate IDs stop startup. Load only trusted scripts and bytecode.

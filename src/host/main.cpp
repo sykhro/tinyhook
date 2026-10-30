@@ -417,7 +417,7 @@ namespace {
                         Reader encoded_tag(std::span<const std::uint8_t>(p.input).subspan(hello_size,8));
                         auto tag=encoded_tag.number(8);
                         p.profile=find_profile(tag);
-                        // 0.2 clients/DLLs authenticated only the configuration bytes.
+                        // Single-profile producers may send a configuration-only tag.
                         if(!p.profile&&profiles.size()==1&&tag==config_tag(profiles.front().config))p.profile=&profiles.front();
                         if(!p.profile&&profiles.empty()&&tag==config_tag(empty_config)){
                             // Pass-through integration/diagnostic producer.
@@ -579,7 +579,7 @@ namespace {
 
             std::size_t hooks=0;
             for(const auto& profile:profiles)hooks+=profile.script->specs().size();
-            spdlog::info("TinyHook 0.3.0 (experimental), {} engine profile(s), {} hook definition(s)",profiles.size(),hooks);
+            spdlog::info("TinyHook (experimental), {} engine profile(s), {} hook definition(s)",profiles.size(),hooks);
             for(const auto& profile:profiles)spdlog::debug("profile {}: {} from {}",profile.script->id(),profile.script->engine(),profile.source);
             spdlog::info("WebSocket URL: ws://127.0.0.1:{}/?token={}",opts.ws,opts.token);
             spdlog::info("Capture/config: 127.0.0.1:{} (authenticated)",opts.agent);

@@ -1,6 +1,9 @@
 # Generate distribution notices from the same manifest used by the provider.
 block()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/dependencies.json")
+get_property(configure_depends DIRECTORY PROPERTY CMAKE_CONFIGURE_DEPENDS)
+list(APPEND configure_depends "${PROJECT_SOURCE_DIR}/dependencies.json")
+list(REMOVE_DUPLICATES configure_depends)
+set_property(DIRECTORY PROPERTY CMAKE_CONFIGURE_DEPENDS "${configure_depends}")
 file(READ "${PROJECT_SOURCE_DIR}/dependencies.json" manifest)
 set(notices "# Third-party software\n\nGenerated from dependencies.json by CMake.\nDependencies retain their own copyrights and licenses.\n\n")
 string(JSON count LENGTH "${manifest}")

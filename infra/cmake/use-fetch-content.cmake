@@ -2,6 +2,7 @@
 # Package-manager builds can omit this file entirely. Inspired by beman.exemplar.
 include(FetchContent)
 set(_tinyhook_lockfile "${CMAKE_CURRENT_LIST_DIR}/../../dependencies.json")
+cmake_path(NORMAL_PATH _tinyhook_lockfile)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_tinyhook_lockfile}")
 file(READ "${_tinyhook_lockfile}" _tinyhook_dependencies)
 

@@ -2,7 +2,6 @@ cmake_minimum_required(VERSION 3.30...4.0)
 
 project(
     tinyhook
-    VERSION 0.3.0
     DESCRIPTION "Small text-capture client and native WebSocket host"
     LANGUAGES C CXX
 )

@@ -12,7 +12,7 @@ Game → th-hook.dll → th-host → WebSocket text reader
 
 The project is experimental. The SiglusEngine4 x86 profile has been probed
 against Angel Beats! -1st beat- under CrossOver; support depends on the exact
-engine build and hook signatures. Automatic detection matches supplied profiles.
+engine build and hook signatures. Automatic detection matches the profiles in `scripts/engines`.
 
 ## Build
 
@@ -69,7 +69,7 @@ Paste that URL into **Primary WebSocket** in
 text in the terminal. The host sends UTF-8 text messages. It binds to loopback
 only; both the browser and capture connections require the token.
 
-For game capture, start the host with the supplied engine profiles:
+For game capture, start the host with the engine profiles:
 
 ```sh
 ./build/macos-small/bin/th-host \

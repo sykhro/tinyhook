@@ -18,15 +18,8 @@ configure_package_config_file(
     "${PROJECT_BINARY_DIR}/tinyhook-config.cmake"
     INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/tinyhook"
 )
-write_basic_package_version_file(
-    "${PROJECT_BINARY_DIR}/tinyhook-config-version.cmake"
-    VERSION "${PROJECT_VERSION}"
-    COMPATIBILITY SameMinorVersion
-    ARCH_INDEPENDENT
-)
 install(
     FILES "${PROJECT_BINARY_DIR}/tinyhook-config.cmake"
-          "${PROJECT_BINARY_DIR}/tinyhook-config-version.cmake"
     DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/tinyhook"
     COMPONENT tinyhook-development
 )

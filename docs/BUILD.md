@@ -1,146 +1,109 @@
-# Build-system design and migration
+# Building and packaging
 
-## Reference
+The [README](../README.md#build) covers the standard builds. Presets choose the
+compiler flags, build type, runtime linkage, and dependency provider. Each uses
+its own directory under `build/`.
 
-The restructuring follows the source/build/install-tree separation and header
-file sets in Vito Gamberini's C++Now 2025 presentation, and the opt-in dependency
-provider/passive-project approach illustrated by `beman.exemplar`.
+## Presets
 
-- Presentation and slides: <https://schedule.cppnow.org/session/2025/post-modern-cmake/>
-- Exemplar revision consulted: `32b69bd5846676013a204ce3c3fcbd6c074ea701`
-  (<https://github.com/bemanproject/exemplar/tree/32b69bd5846676013a204ce3c3fcbd6c074ea701>)
-- Beman CMake guidance: <https://bemanproject.org/docs/beman_standard/#cmake>
+| Preset | Target |
+| --- | --- |
+| `macos-small` | macOS host with Luau source support |
+| `macos-vm` | macOS bytecode-only host and separate `th-compile` tool |
+| `linux-small` | Linux host with Luau source support |
+| `linux-relay` | Linux host without Luau |
+| `linux-sanitize` | Linux relay with Clang, ASan, and UBSan |
+| `clang-x86`, `clang-x64` | Native Windows helpers with clang-cl and LLD |
+| `msvc-x86`, `msvc-x64` | Native Windows helpers with Visual Studio 2022 |
+| `windows-x86`, `windows-x64` | Windows helpers cross-compiled with MinGW |
+| `system` | Build using installed dependency packages |
 
-This application is not a Beman library and does not claim Beman conformance or
-affiliation. No Beman implementation files were copied. The build code here is
-an application-specific implementation of those patterns.
+Run a native preset with `cmake --workflow --preset NAME` to configure, build,
+and test. MinGW cross workflows build without running the Windows executables.
+For clang-cl, use an MSVC developer environment matching the target architecture.
 
-## Where things belong
+## Dependencies
 
-```text
-CMakeLists.txt                         project, public options, composition
-CMakePresets.json                      developer/CI policy and workflows
-dependencies.json                      full dependency revision pins
-include/th/CMakeLists.txt              tinyhook::core header FILE_SET
-src/host/CMakeLists.txt                host targets, private dependencies
-src/windows/CMakeLists.txt             helper/DLL targets, required ABI settings
-tests/CMakeLists.txt                   test targets and test-only dependencies
-infra/cmake/use-fetch-content.cmake    optional dependency provider
-infra/cmake/toolchains/                cross-target compiler selection
-infra/cmake/install.cmake              components, exported package, file sets
-infra/cmake/require-cxx20.cmake         diagnose unsupported environment, do not change it
-```
+The development presets select `infra/cmake/use-fetch-content.cmake` as a CMake
+dependency provider. It fetches the revisions in `dependencies.json` into the
+build tree. The manifest also records license names and license filenames;
+CMake uses it to generate `THIRD_PARTY.md` in the build directory.
 
-There are no global compiler-flag assignments, `CACHE ... FORCE`, global IPO/CRT
-choices, dependency downloads, or umbrella warning targets in the product
-CMake files. The namespaced header target exports no compile policy.
-`find_package` can be fulfilled by a package manager or the developer-selected
-provider. Dependency options are scoped within its function, with CMP0077 NEW
-for upstream projects that otherwise reset that policy. No third-party checkout
-is written into the source tree.
-
-The two private MinGW link options retained in the Windows target definition
-select `wmain` and stable exported names. They are ABI/entry-point requirements,
-not optimization or warning policy.
-
-The CMake minimum is 3.30; `...4.0` declares the policy compatibility range.
-CI installs the latest stable CMake and upstream LLVM/Clang. Native Windows
-jobs use the `clang-x86` and `clang-x64` presets with clang-cl and LLD in matching
-MSVC developer environments.
-
-`dependencies.json` records source revisions, license descriptions, and license
-filenames. CMake generates `THIRD_PARTY.md` in the build directory from that
-manifest during configuration and installs it with runtime packages. The fetching
-provider also installs the complete license files for dependencies it supplies.
-
-## Consumer and install behavior
-
-Applications, tests, examples and installation default to `PROJECT_IS_TOP_LEVEL`.
-Consumers can request them explicitly. GNUInstallDirs is respected; headers are
-installed via `FILE_SET HEADERS`. `tinyhook::core` is available both in the build
-tree and from the relocatable `tinyhook` config package. The package's version
-compatibility is same-minor and its header-only export is architecture-independent.
-
-The CMake contract test verifies a real install, moves the install prefix,
-deletes its producer build directory, and builds/runs a fresh consumer through
-`find_package`. Another consumer embeds TinyHook with `add_subdirectory` while
-retaining its C++23/flags/CRT/IPO/shared-library settings. A C++17 configuration
-must fail with a useful diagnostic, not silently select C++20. Local mock Luau, MinHook,
-and spdlog projects test provider scoping without claiming to build them.
-
-## Migration from 0.1
-
-Use a fresh build directory. The old `TH_*` CMake options have been replaced by
-`TINYHOOK_*` options. `TH_LTO` is removed: the appropriate CMake IPO variable
-belongs to the preset, command line, or toolchain. The MinGW toolchains moved
-from `cmake/` to `infra/cmake/toolchains/`. Presets place runtime outputs in
-`build/<preset>/bin`; MSVC multi-config generators add the configuration folder.
-
-Options:
-
-- `TINYHOOK_BUILD_APPS`, `TINYHOOK_BUILD_TESTS`, `TINYHOOK_BUILD_EXAMPLES`, `TINYHOOK_INSTALL`
-- `TINYHOOK_WITH_LUAU`, `TINYHOOK_WITH_COMPILER`, `TINYHOOK_BUILD_COMPILER_TOOL`
-
-A packager-controlled relay-only build, without a provider or network:
+For an offline build, point the provider at existing source trees:
 
 ```sh
-cmake -S . -B build/custom -G Ninja \
-  -DCMAKE_CXX_STANDARD=23 \
-  -DCMAKE_BUILD_TYPE=MinSizeRel \
-  -DTINYHOOK_WITH_LUAU=OFF
-cmake --build build/custom
-ctest --test-dir build/custom --output-on-failure
+cmake --preset macos-small \
+  -DFETCHCONTENT_SOURCE_DIR_LUAU=/path/to/luau \
+  -DFETCHCONTENT_SOURCE_DIR_SPDLOG=/path/to/spdlog
+cmake --build --preset macos-small
+ctest --preset macos-small
 ```
 
-All runtime application builds require a config package exposing
-`spdlog::spdlog`. For a Luau build without the provider, supply `Luau::VM` and,
-when needed, `Luau::Compiler`. The Windows build additionally needs
-`minhook::minhook`. These are explicit package contracts, not a claim that every
-upstream checkout ships a compatible installable config package.
+Windows builds also accept `FETCHCONTENT_SOURCE_DIR_MINHOOK`.
 
-## macOS MinGW archive sanity
-
-The MinGW toolchain files deliberately select target binutils (`*-gcc-ar`,
-`*-gcc-ranlib`, `*-nm`, and friends). A PE/COFF static archive must not be
-indexed by `/usr/bin/ranlib` from macOS. The compiler-aware wrappers are also
-required when the developer preset enables IPO/LTO.
-
-If an older build directory was configured before 0.2.1, remove it before
-reconfiguring because CMake caches the archive tools:
+To use a package manager instead of fetching dependencies:
 
 ```sh
-rm -rf build/windows-x86
-cmake --workflow --preset windows-x86
+cmake --preset system -DCMAKE_PREFIX_PATH=/path/to/packages
+cmake --build --preset system
+ctest --preset system
 ```
 
-During configuration, this is a useful one-line check:
+Packages must expose `spdlog::spdlog`, `minhook::minhook` for Windows, and
+`Luau::VM` plus `Luau::Compiler` for the relevant host features. Luau's upstream
+targets are named `Luau.VM` and `Luau.Compiler`; the fetching provider supplies
+aliases, and a packaged build needs equivalent targets.
+
+## Options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `TINYHOOK_BUILD_APPS` | Top-level builds | Build the host or Windows helpers |
+| `TINYHOOK_BUILD_TESTS` | Top-level builds | Build and register tests |
+| `TINYHOOK_BUILD_EXAMPLES` | Top-level builds | Build the Windows capture fixture |
+| `TINYHOOK_INSTALL` | Top-level builds | Add installation rules |
+| `TINYHOOK_WITH_LUAU` | `ON` | Embed Luau in the host |
+| `TINYHOOK_WITH_COMPILER` | `ON` | Accept Luau source as well as bytecode |
+| `TINYHOOK_BUILD_COMPILER_TOOL` | `OFF` | Build the separate `th-compile` tool |
+
+For example, add `-DTINYHOOK_WITH_LUAU=OFF` when configuring a relay-only host.
+The application, test, example, and install options default to `OFF` when
+TinyHook is included with `add_subdirectory`.
+
+## Installation
 
 ```sh
-grep -E 'CMAKE_(AR|RANLIB):FILEPATH' build/windows-x86/CMakeCache.txt
+cmake --install build/macos-small --prefix dist --strip --component tinyhook-runtime
 ```
 
-Both paths should name `i686-w64-mingw32-*`, never
-`/Library/Developer/CommandLineTools/usr/bin/ranlib`.
+| Component | Contents |
+| --- | --- |
+| `tinyhook-runtime` | Host or Windows helpers, profiles, and license notices |
+| `tinyhook-tools` | Separate bytecode compiler, when enabled |
+| `tinyhook-examples` | Windows fixture, when enabled |
+| `tinyhook-development` | Headers and CMake package |
 
-## Homebrew i686 MinGW, `-Os`, and GCC PR125359
+The fetching provider installs the complete license files for dependencies it
+supplies. Package-manager builds must arrange those files through their package
+manager. The generated manifest lists all declared dependencies.
 
-The MinGW cross presets intentionally disable CMake IPO/LTO, but that is not the
-root cause of the 32-bit `std::__cxx11::basic_string(...&&)` link failure. GCC
-PR125359 is a GCC 16/17 regression in the 32-bit MinGW path: `-Os` enables
-`-fdeclone-ctor-dtor`, which can make a constructor clone call the unified C4
-constructor symbol even though libstdc++ does not export that symbol.
+Consume the header library with:
 
-TinyHook keeps `MinSizeRel`/`-Os` for the x86 Windows build and disables only the
-faulty transformation with `-fno-declone-ctor-dtor`. This preserves the other
-size optimizations. The x64 preset is unchanged.
-
-If upgrading from 0.2.1 or 0.2.2, remove or reconfigure the x86 build directory
-and do a clean rebuild:
-
-```sh
-rm -rf build/windows-x86
-cmake --workflow --preset windows-x86
+```cmake
+find_package(tinyhook CONFIG REQUIRED)
+target_link_libraries(my_tool PRIVATE tinyhook::core)
 ```
 
-A verbose x86 C++ compile command should now contain both `-Os` and
-`-fno-declone-ctor-dtor`, and should not contain `-flto`.
+The target exports header paths. Set C++20 or newer, warnings, optimization, and
+runtime linkage in the consuming project.
+
+## MinGW troubleshooting
+
+The cross toolchains select target binutils, including `gcc-ar` and `gcc-ranlib`.
+If a cached build selects macOS archive tools, reconfigure in a fresh build
+directory. Inspect `CMAKE_AR` and `CMAKE_RANLIB` in `CMakeCache.txt`; their paths
+should begin with the target triplet, such as `i686-w64-mingw32-`.
+
+The x86 preset disables `-fdeclone-ctor-dtor` to work around GCC PR125359, which
+can cause unresolved `std::string` constructor symbols under `-Os`. It keeps
+size optimization enabled. Both MinGW presets disable IPO.

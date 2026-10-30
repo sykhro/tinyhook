@@ -46,6 +46,11 @@ def main():
         run(cmake, "--install", root / "producer", "--prefix", root / "stage-a")
         installed_notices = root / "stage-a" / "share" / "licenses" / "tinyhook" / "THIRD_PARTY.md"
         assert installed_notices.read_text() == notices
+        # The provider and notice generator both watch the manifest. Ninja must
+        # accept their combined regeneration rules, including normalized paths.
+        configure(source, root / "notices-provider", *disabled, "-DTINYHOOK_INSTALL=ON",
+                  f"-DCMAKE_PROJECT_TOP_LEVEL_INCLUDES={source / 'infra/cmake/use-fetch-content.cmake'}")
+        run(cmake, "--build", root / "notices-provider")
         (root / "stage-a").rename(root / "stage-b")
         shutil.rmtree(root / "producer")  # Installed package must not require the build tree.
 
@@ -73,7 +78,7 @@ target_link_libraries(consumer PRIVATE tinyhook::core)
         (consumer / "main.cpp").write_text(main_cpp)
         (consumer / "CMakeLists.txt").write_text('''cmake_minimum_required(VERSION 3.30...4.0)
 project(consumer LANGUAGES CXX)
-find_package(tinyhook 0.3 CONFIG REQUIRED)
+find_package(tinyhook CONFIG REQUIRED)
 ''' + assertions)
         policy = ["-DBUILD_SHARED_LIBS=ON", "-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF", "-DCMAKE_CXX_FLAGS=-DTINYHOOK_EXTERNAL_POLICY=731"]
         configure(consumer, root / "consumer-build", f"-DCMAKE_PREFIX_PATH={root / 'stage-b'}", *policy)
