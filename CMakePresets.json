@@ -1,6 +1,7 @@
 {
   "version": 10,
   "$comment": [
+    "Install build tools: uv venv --python 3; uv pip install --upgrade -r requirements-dev.txt. Run commands with uv run --no-project.",
     "Run cmake --workflow --preset NAME to configure, build, and test a native target. Cross workflows only build.",
     "Outputs: build/<preset>/bin. Install with cmake --install build/<preset> --prefix dist --component tinyhook-runtime.",
     "Other install components: tinyhook-tools (th-compile), tinyhook-examples (Windows fixture), tinyhook-development (headers and CMake package).",

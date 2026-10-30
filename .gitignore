@@ -7,3 +7,4 @@ stage/
 *.luauc
 CMakeUserPresets.json
 .DS_Store
+.venv/

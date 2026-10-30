@@ -14,106 +14,65 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-26.04
             arch: x64
-          - os: macos-latest
+          - os: macos-26
             arch: arm64
-          - os: windows-latest
+          - os: windows-2025-vs2026
             arch: x86
-          - os: windows-latest
+          - os: windows-2025-vs2026
             arch: x64
     env:
       CMAKE_BUILD_PARALLEL_LEVEL: 3
       CTEST_PARALLEL_LEVEL: 2
+      UV_PYTHON_PREFERENCE: only-managed
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-      - name: Resolve latest stable LLVM release
-        id: llvm
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const {data} = await github.rest.repos.getLatestRelease({owner: 'llvm', repo: 'llvm-project'});
-            const version = data.tag_name.replace(/^llvmorg-/, '');
-            if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Unexpected LLVM release: ${data.tag_name}`);
-            core.setOutput('version', version);
-            const windows = data.assets.find(a => a.name === `clang+llvm-${version}-x86_64-pc-windows-msvc.tar.xz`);
-            if (!windows) throw new Error('Latest LLVM release has no Windows x64 archive');
-            core.setOutput('windows-url', windows.browser_download_url);
-      - name: Set up Clang and Ninja
-        if: runner.os != 'Windows'
-        uses: aminya/setup-cpp@v1
-        with:
-          compiler: llvm-${{ steps.llvm.outputs.version }}
-          ninja: true
-      - name: Install latest Clang on Windows
-        if: runner.os == 'Windows'
-        env:
-          LLVM_URL: ${{ steps.llvm.outputs.windows-url }}
-        run: |
-          $archive = Join-Path $env:RUNNER_TEMP 'llvm.tar.xz'
-          $directory = Join-Path $env:RUNNER_TEMP 'llvm'
-          Invoke-WebRequest -Uri $env:LLVM_URL -OutFile $archive
-          New-Item -ItemType Directory -Path $directory -Force | Out-Null
-          tar -xf $archive -C $directory
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $compiler = Get-ChildItem $directory -Filter clang-cl.exe -Recurse | Select-Object -First 1
-          if (!$compiler) { throw 'LLVM archive contains no clang-cl.exe' }
-          "LLVM_PATH=$($compiler.Directory.Parent.FullName)" >> $env:GITHUB_ENV
-      - name: Install Ninja on Windows
-        if: runner.os == 'Windows'
-        run: python -m pip install --upgrade ninja
-      - name: Install latest stable CMake
-        uses: jwlawson/actions-setup-cmake@v2
-        with:
-          cmake-version: latest
+      - uses: actions/checkout@v7
       - name: Set up Windows SDK and runtime
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@v1.13.0
         with:
           arch: ${{ matrix.arch }}
-      - name: Select Clang on Unix
-        if: runner.os != 'Windows'
-        shell: bash
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: latest
+          python-version: '3'
+          activate-environment: true
+          enable-cache: true
+      - name: Install build tools with uv
+        run: uv pip install --upgrade -r requirements-dev.txt
+      - name: Install latest stable LLVM
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: uv run --no-project python infra/ci/install_llvm.py
+      - name: Show tool versions
         run: |
-          echo "CC=$(command -v clang)" >> "$GITHUB_ENV"
-          echo "CXX=$(command -v clang++)" >> "$GITHUB_ENV"
-          clang --version
-          cmake --version
-          ninja --version
-      - name: Select clang-cl on Windows
-        if: runner.os == 'Windows'
-        run: |
-          $llvmBin = Join-Path $env:LLVM_PATH 'bin'
-          $llvmBin >> $env:GITHUB_PATH
-          & "$llvmBin/clang-cl.exe" --version
-          cmake --version
-          ninja --version
+          uv run --no-project python --version
+          uv run --no-project cmake --version
+          uv run --no-project ninja --version
       - name: Build and test Linux variants
         if: runner.os == 'Linux'
         run: |
-          cmake --workflow --preset linux-relay
-          cmake --workflow --preset linux-sanitize
-          cmake --workflow --preset linux-small
-          cmake --install build/linux-small --prefix dist --strip --component tinyhook-runtime
+          uv run --no-project cmake --workflow --preset linux-relay
+          uv run --no-project cmake --workflow --preset linux-sanitize
+          uv run --no-project cmake --workflow --preset linux-small
+          uv run --no-project cmake --install build/linux-small --prefix dist --strip --component tinyhook-runtime
       - name: Build and test macOS variants
         if: runner.os == 'macOS'
         run: |
-          cmake --workflow --preset macos-small
-          cmake --workflow --preset macos-vm
+          uv run --no-project cmake --workflow --preset macos-small
+          uv run --no-project cmake --workflow --preset macos-vm
           mkdir -p compiled-profiles
-          build/macos-vm/bin/th-compile scripts/engines/siglusengine4-x86.luau compiled-profiles/siglusengine4-x86.luauc
-          build/macos-vm/bin/th-host --script-dir compiled-profiles --check
-          cmake --install build/macos-vm --prefix dist --strip --component tinyhook-runtime
+          uv run --no-project build/macos-vm/bin/th-compile scripts/engines/siglusengine4-x86.luau compiled-profiles/siglusengine4-x86.luauc
+          uv run --no-project build/macos-vm/bin/th-host --script-dir compiled-profiles --check
+          uv run --no-project cmake --install build/macos-vm --prefix dist --strip --component tinyhook-runtime
       - name: Build and test Windows with clang-cl
         if: runner.os == 'Windows'
         run: |
-          cmake --workflow --preset clang-${{ matrix.arch }}
+          uv run --no-project cmake --workflow --preset clang-${{ matrix.arch }}
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cmake --install build/clang-${{ matrix.arch }} --prefix dist --component tinyhook-runtime
-      - uses: actions/upload-artifact@v4
+          uv run --no-project cmake --install build/clang-${{ matrix.arch }} --prefix dist --component tinyhook-runtime
+      - uses: actions/upload-artifact@v7
         with:
           name: tinyhook-${{ runner.os }}-${{ matrix.arch }}
           path: dist/

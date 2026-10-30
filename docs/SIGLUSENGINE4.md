@@ -10,8 +10,8 @@ string layout.
 Build the native host and x86 helpers, then start the host:
 
 ```sh
-cmake --workflow --preset macos-small
-cmake --workflow --preset windows-x86
+uv run --no-project cmake --workflow --preset macos-small
+uv run --no-project cmake --workflow --preset windows-x86
 ./build/macos-small/bin/th-host --script-dir scripts/engines \
   --token-file "$PWD/session.token"
 ```

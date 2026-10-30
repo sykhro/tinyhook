@@ -16,17 +16,25 @@ engine build and hook signatures. Automatic detection matches the profiles in `s
 
 ## Build
 
-You need CMake 3.31+, Ninja, Git, Python 3, and a C++20 compiler and standard
-library. The development presets fetch pinned dependencies from
+You need uv, Git, and a C++20 compiler and standard library. Install Python,
+CMake, and Ninja with uv:
+
+```sh
+uv venv --python 3
+uv pip install --upgrade -r requirements-dev.txt
+```
+
+Run build commands through `uv run --no-project` to use those tools.
+The development presets fetch pinned dependencies from
 [`dependencies.json`](dependencies.json).
 
 On macOS, with Xcode Command Line Tools installed:
 
 ```sh
-brew install cmake ninja llvm mingw-w64
+brew install uv llvm mingw-w64
 CC="$(brew --prefix llvm)/bin/clang" CXX="$(brew --prefix llvm)/bin/clang++" \
-  cmake --workflow --preset macos-small
-cmake --workflow --preset windows-x86
+  uv run --no-project cmake --workflow --preset macos-small
+uv run --no-project cmake --workflow --preset windows-x86
 ```
 
 The host is `build/macos-small/bin/th-host`. The cross build produces
@@ -38,21 +46,23 @@ The macOS cross builds use MinGW.
 On Linux:
 
 ```sh
-CC=clang CXX=clang++ cmake --workflow --preset linux-small
+CC=clang CXX=clang++ uv run --no-project cmake --workflow --preset linux-small
 ```
 
-On Windows, install LLVM, CMake, Ninja, Python, and Visual Studio C++ build tools.
-In an x86 or x64 developer command prompt matching the target:
+On Windows, install uv, LLVM, and Visual Studio C++ build tools, then run the
+uv setup commands above. In an x86 or x64 developer command prompt matching the
+target:
 
 ```bat
-cmake --workflow --preset clang-x86
+uv run --no-project cmake --workflow --preset clang-x86
 ```
 
 Use `clang-x64` in an x64 prompt for a 64-bit build. These presets use `clang-cl`
 and LLD, with the Windows SDK and static MSVC runtime.
 
 Each native workflow configures, builds, and runs the tests. CI installs the
-latest stable upstream Clang and CMake on Linux, macOS, and Windows x86/x64.
+latest stable upstream Clang and uses uv for Python, CMake, and Ninja on
+Ubuntu 26.04, macOS 26, and Windows Server 2025 with VS 2026 (x86/x64).
 It also runs Linux sanitizers and uploads runtime packages.
 
 ## Use
@@ -109,7 +119,7 @@ The `macos-vm` preset builds a smaller host that accepts bytecode and a separate
 Install a runtime package with:
 
 ```sh
-cmake --install build/macos-small --prefix dist --strip --component tinyhook-runtime
+uv run --no-project cmake --install build/macos-small --prefix dist --strip --component tinyhook-runtime
 ```
 
 CMake generates `THIRD_PARTY.md` in the build directory from `dependencies.json`
