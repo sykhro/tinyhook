@@ -53,9 +53,11 @@ jobs:
       - name: Build and test Linux variants
         if: runner.os == 'Linux'
         run: |
-          uv run --no-project cmake --workflow --preset linux-relay
-          uv run --no-project cmake --workflow --preset linux-sanitize
-          uv run --no-project cmake --workflow --preset linux-small
+          for preset in linux-relay linux-sanitize linux-small; do
+            uv run --no-project cmake --preset "$preset" -DCMAKE_LINKER_TYPE=LLD
+            uv run --no-project cmake --build --preset "$preset"
+            uv run --no-project ctest --preset "$preset"
+          done
           uv run --no-project cmake --install build/linux-small --prefix dist --strip --component tinyhook-runtime
       - name: Build and test macOS variants
         if: runner.os == 'macOS'
