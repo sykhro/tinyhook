@@ -71,9 +71,11 @@ jobs:
         shell: bash
         run: |
           if [[ "$RUNNER_OS" == Windows ]]; then
-            echo "CC=clang-cl" >> "$GITHUB_ENV"
-            echo "CXX=clang-cl" >> "$GITHUB_ENV"
-            clang-cl --version
+            llvm_bin="$(cygpath -u "$LLVM_PATH")/bin"
+            echo "$(cygpath -w "$llvm_bin")" >> "$GITHUB_PATH"
+            echo "CC=$LLVM_PATH/bin/clang-cl.exe" >> "$GITHUB_ENV"
+            echo "CXX=$LLVM_PATH/bin/clang-cl.exe" >> "$GITHUB_ENV"
+            "$llvm_bin/clang-cl.exe" --version
           else
             echo "CC=$(command -v clang)" >> "$GITHUB_ENV"
             echo "CXX=$(command -v clang++)" >> "$GITHUB_ENV"
@@ -101,6 +103,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           cmake --workflow --preset clang-${{ matrix.arch }}
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --install build/clang-${{ matrix.arch }} --prefix dist --component tinyhook-runtime
       - uses: actions/upload-artifact@v4
         with:

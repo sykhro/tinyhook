@@ -16,7 +16,7 @@ engine build and hook signatures. Automatic detection matches the profiles in `s
 
 ## Build
 
-You need CMake 3.30+, Ninja, Git, Python 3, and a C++20 compiler and standard
+You need CMake 3.31+, Ninja, Git, Python 3, and a C++20 compiler and standard
 library. The development presets fetch pinned dependencies from
 [`dependencies.json`](dependencies.json).
 
@@ -114,9 +114,9 @@ cmake --install build/macos-small --prefix dist --strip --component tinyhook-run
 
 CMake generates `THIRD_PARTY.md` in the build directory from `dependencies.json`
 and installs it with the license files. For package-manager builds, dependency
-overrides, and the header-only `tinyhook::core` target, see the build guide.
+overrides, and the header-only `tinyhook::core` target, see the comments in
+[`CMakePresets.json`](CMakePresets.json).
 
-- [Build and package configuration](docs/BUILD.md)
 - [Writing Luau profiles](docs/SCRIPTING.md)
 - [Engine detection](docs/ENGINE-DETECTION.md)
 - [SiglusEngine4 profile and limitations](docs/SIGLUSENGINE4.md)
