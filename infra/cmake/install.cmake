@@ -1,4 +1,5 @@
 include(CMakePackageConfigHelpers)
+include("${CMAKE_CURRENT_LIST_DIR}/third-party.cmake")
 
 install(
     TARGETS tinyhook.core
@@ -30,7 +31,7 @@ install(
     COMPONENT tinyhook-development
 )
 install(
-    FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_SOURCE_DIR}/THIRD_PARTY.md"
+    FILES "${PROJECT_SOURCE_DIR}/LICENSE" "${PROJECT_BINARY_DIR}/THIRD_PARTY.md"
     DESTINATION "${CMAKE_INSTALL_DATADIR}/licenses/tinyhook"
     COMPONENT tinyhook-runtime
 )

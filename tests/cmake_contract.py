@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline build-system tests. Dependency-provider fixtures are NOT real dependencies."""
 import pathlib
+import json
 import shutil
 import subprocess
 import sys
@@ -32,8 +33,19 @@ def main():
         assert "requires a C++20-capable" in result.stdout + result.stderr
 
         configure(source, root / "producer", *disabled, "-DTINYHOOK_INSTALL=ON", "-DCMAKE_INSTALL_LIBDIR=lib")
+        notices = (root / "producer" / "THIRD_PARTY.md").read_text()
+        manifest = json.loads((source / "dependencies.json").read_text())
+        assert notices.count("\n## ") == len(manifest)
+        for package, dependency in manifest.items():
+            assert f"## {package}\n" in notices
+            assert f"License: {dependency['license']}." in notices
+            assert f"Revision: `{dependency['git_tag']}`." in notices
+            url = dependency['git_repository'].removesuffix('.git')
+            assert f"{url}/blob/{dependency['git_tag']}/{dependency['license_file']}" in notices
         run(cmake, "--build", root / "producer")
         run(cmake, "--install", root / "producer", "--prefix", root / "stage-a")
+        installed_notices = root / "stage-a" / "share" / "licenses" / "tinyhook" / "THIRD_PARTY.md"
+        assert installed_notices.read_text() == notices
         (root / "stage-a").rename(root / "stage-b")
         shutil.rmtree(root / "producer")  # Installed package must not require the build tree.
 

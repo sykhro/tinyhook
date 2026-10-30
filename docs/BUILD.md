@@ -43,9 +43,15 @@ The two private MinGW link options retained in the Windows target definition
 select `wmain` and stable exported names. They are ABI/entry-point requirements,
 not optimization or warning policy.
 
-The CMake minimum is `3.30...4.0`, not an arbitrary demand for a 4.x executable.
-The current local tool is CMake 3.31.6. CMake 4.0 CI is specified but not run in
-this delivery; the version range is not evidence of a tested 4.0 build.
+The CMake minimum is 3.30; `...4.0` declares the policy compatibility range.
+CI installs the latest stable CMake and upstream LLVM/Clang. Native Windows
+jobs use the `clang-x86` and `clang-x64` presets with clang-cl and LLD in matching
+MSVC developer environments.
+
+`dependencies.json` records source revisions, license descriptions, and license
+filenames. CMake generates `THIRD_PARTY.md` in the build directory from that
+manifest during configuration and installs it with runtime packages. The fetching
+provider also installs the complete license files for dependencies it supplies.
 
 ## Consumer and install behavior
 

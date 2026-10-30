@@ -9,7 +9,8 @@
       "LUAU_BUILD_WEB": false,
       "LUAU_BUILD_SHARED": false
     },
-    "license_file": "LICENSE.txt"
+    "license_file": "LICENSE.txt",
+    "license": "MIT"
   },
   "minhook": {
     "name": "minhook",
@@ -18,7 +19,8 @@
     "options": {
       "BUILD_SHARED_LIBS": false
     },
-    "license_file": "LICENSE.txt"
+    "license_file": "LICENSE.txt",
+    "license": "BSD-2-Clause; includes bundled component notices"
   },
   "spdlog": {
     "name": "spdlog",
@@ -38,6 +40,7 @@
       "SPDLOG_USE_STD_FORMAT": false,
       "SPDLOG_FMT_EXTERNAL": false,
       "SPDLOG_FMT_EXTERNAL_HO": false
-    }
+    },
+    "license": "MIT; includes bundled fmt notices"
   }
 }
