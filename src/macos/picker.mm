@@ -24,10 +24,11 @@
 @property(nonatomic,weak) THPicker* picker;
 @end
 
-@interface THPickerWindow : NSWindow
+@interface THPickerWindow : NSPanel
 @end
 @implementation THPickerWindow
 - (BOOL)canBecomeKeyWindow { return YES; }
+- (BOOL)canBecomeMainWindow { return NO; }
 @end
 
 static NSRect windowRect(NSDictionary* window) {
@@ -92,7 +93,16 @@ static NSRect windowRect(NSDictionary* window) {
     selected=nil;
     const NSPoint mouse=NSEvent.mouseLocation;
     for(NSDictionary* window in windows){
-        if([window[(id)kCGWindowOwnerPID] intValue]==getpid()||[window[(id)kCGWindowLayer] intValue]!=0)continue;
+        const auto owner=[window[(id)kCGWindowOwnerPID] intValue];
+        if(owner==getpid())continue;
+        const auto layer=[window[(id)kCGWindowLayer] integerValue];
+        if(layer<0)continue;
+        // Wine raises fullscreen game windows above the normal application layer.
+        // Exclude system surfaces such as the cursor, even when they have a title.
+        if(layer!=0){
+            NSRunningApplication* app=[NSRunningApplication runningApplicationWithProcessIdentifier:owner];
+            if(![window[(id)kCGWindowName] length]||!app||app.activationPolicy==NSApplicationActivationPolicyProhibited)continue;
+        }
         NSRect rect=windowRect(window);
         if(rect.size.width<1||rect.size.height<1)continue;
         if(NSPointInRect(mouse,rect)){selected=window;break;}
@@ -115,12 +125,16 @@ namespace {
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
         THPicker* picker=[[THPicker alloc] init];
         for(NSScreen* screen in NSScreen.screens){
-            THPickerWindow* panel=[[THPickerWindow alloc] initWithContentRect:screen.frame styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];
+            THPickerWindow* panel=[[THPickerWindow alloc] initWithContentRect:screen.frame styleMask:NSWindowStyleMaskBorderless|NSWindowStyleMaskNonactivatingPanel backing:NSBackingStoreBuffered defer:NO];
             panel.opaque=NO;
             panel.backgroundColor=NSColor.clearColor;
             panel.hasShadow=NO;
-            panel.level=NSScreenSaverWindowLevel;
-            panel.collectionBehavior=NSWindowCollectionBehaviorCanJoinAllSpaces|NSWindowCollectionBehaviorFullScreenAuxiliary;
+            panel.hidesOnDeactivate=NO;
+            panel.worksWhenModal=YES;
+            panel.level=CGWindowLevelForKey(kCGMaximumWindowLevelKey);
+            panel.collectionBehavior=NSWindowCollectionBehaviorCanJoinAllSpaces|NSWindowCollectionBehaviorFullScreenAuxiliary|
+                NSWindowCollectionBehaviorStationary|NSWindowCollectionBehaviorIgnoresCycle;
+            if(@available(macOS 13.0,*))panel.collectionBehavior|=NSWindowCollectionBehaviorCanJoinAllApplications;
             THPickerView* view=[[THPickerView alloc] initWithFrame:NSMakeRect(0,0,screen.frame.size.width,screen.frame.size.height)];
             view.picker=picker;
             panel.contentView=view;
@@ -129,7 +143,6 @@ namespace {
             [panel orderFrontRegardless];
         }
         [picker refresh];
-        [NSApp activateIgnoringOtherApps:YES];
         [picker->panels.firstObject makeKeyWindow];
         picker->timer=[NSTimer scheduledTimerWithTimeInterval:0.05 target:picker selector:@selector(refresh) userInfo:nil repeats:YES];
         [NSApp run];
