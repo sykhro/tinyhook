@@ -117,6 +117,63 @@ def producer(port, config, token=TOKEN, identity=None):
     s.sendall(hello[6:])
     return s
 
+def selection_checks(agent):
+    title = "Game 日本語 🦊"
+    request = frame(text_bytes(title))
+
+    def pick():
+        s = connect(agent)
+        s.sendall(b"THK2\x06" + TOKEN + request)
+        return s
+
+    def result(s):
+        n = struct.unpack("<I", exact(s, 4))[0]
+        payload = exact(s, n)
+        assert payload[0] in (0, 1)
+        length = struct.unpack_from("<I", payload, 1)[0]
+        assert len(payload) == 5 + length
+        return payload[0], payload[5:].decode()
+
+    with pick() as no_client:
+        assert result(no_client)[0] == 0
+    with connect(agent) as worker:
+        worker.sendall(b"THK2\x05" + TOKEN)
+        assert exact(worker, 4) == b"OKAY"
+        with connect(agent) as duplicate:
+            duplicate.sendall(b"THK2\x05" + TOKEN)
+            assert exact(duplicate, 4) == b"BUSY"
+        with pick() as chosen:
+            n = struct.unpack("<I", exact(worker, 4))[0]
+            assert exact(worker, n) == text_bytes(title)
+            with pick() as busy:
+                assert result(busy)[0] == 0
+            worker.sendall(frame(b"\x01" + text_bytes("Attached 日本語")))
+            assert result(chosen) == (1, "Attached 日本語")
+        with pick() as missing:
+            n = struct.unpack("<I", exact(worker, 4))[0]
+            exact(worker, n)
+            worker.sendall(frame(b"\x00" + text_bytes("Window not found")))
+            assert result(missing) == (0, "Window not found")
+        with pick() as interrupted:
+            n = struct.unpack("<I", exact(worker, 4))[0]
+            exact(worker, n)
+            worker.shutdown(socket.SHUT_RDWR)
+            assert result(interrupted)[0] == 0
+    for payload in (text_bytes(""), text_bytes("a\x00b"), struct.pack("<I", 1) + b"\xff"):
+        with connect(agent) as invalid:
+            invalid.sendall(b"THK2\x06" + TOKEN + frame(payload))
+            assert invalid.recv(1) == b""
+    with connect(agent) as invalid:
+        invalid.sendall(b"THK2\x05" + b"b" * 64)
+        assert invalid.recv(1) == b""
+    print("PASS: authenticated window selection, Unicode titles, results, busy clients, disconnects, malformed titles")
+
+
+def text_bytes(value):
+    encoded = value.encode()
+    return struct.pack("<I", len(encoded)) + encoded
+
+
 def main():
     binary = str(pathlib.Path(sys.argv[1]).resolve())
     with_luau = "--luau" in sys.argv
@@ -148,6 +205,7 @@ def main():
                     time.sleep(.03)
             else:
                 raise TimeoutError("host never started")
+            selection_checks(agent)
             with connect(agent) as cfg:
                 cfg.sendall(b"THK2\x01" + TOKEN)
                 size = struct.unpack("<I", exact(cfg, 4))[0]

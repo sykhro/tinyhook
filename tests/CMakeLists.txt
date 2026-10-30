@@ -54,3 +54,12 @@ if(NOT CMAKE_CROSSCOMPILING)
         set_tests_properties(tinyhook.cmake-contract PROPERTIES TIMEOUT 120)
     endif()
 endif()
+
+if(TARGET tinyhook.pick AND NOT CMAKE_CROSSCOMPILING)
+    add_test(
+        NAME tinyhook.window-picker
+        COMMAND Python3::Interpreter "${CMAKE_CURRENT_SOURCE_DIR}/mac_picker.py"
+                $<TARGET_FILE:tinyhook.host> $<TARGET_FILE:tinyhook.pick>
+    )
+    set_tests_properties(tinyhook.window-picker PROPERTIES TIMEOUT 30)
+endif()

@@ -32,7 +32,7 @@ target_sources(
     PRIVATE client.cpp
     PRIVATE FILE_SET HEADERS FILES win.hpp scan.hpp
 )
-target_link_libraries(tinyhook.client PRIVATE tinyhook::core spdlog::spdlog ws2_32)
+target_link_libraries(tinyhook.client PRIVATE tinyhook::core spdlog::spdlog ws2_32 user32)
 target_include_directories(tinyhook.client PRIVATE "${PROJECT_SOURCE_DIR}/src")
 
 # Entry point/export spelling is a binary interface requirement, not build policy.
@@ -49,7 +49,7 @@ if(TINYHOOK_BUILD_EXAMPLES)
     add_executable(tinyhook.demo)
     set_target_properties(tinyhook.demo PROPERTIES OUTPUT_NAME th-demo)
     target_sources(tinyhook.demo PRIVATE demo.cpp PRIVATE FILE_SET HEADERS FILES win.hpp)
-    target_link_libraries(tinyhook.demo PRIVATE tinyhook::core spdlog::spdlog)
+    target_link_libraries(tinyhook.demo PRIVATE tinyhook::core spdlog::spdlog user32)
     target_include_directories(tinyhook.demo PRIVATE "${PROJECT_SOURCE_DIR}/src")
     if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
         target_sources(tinyhook.demo PRIVATE demo-x86-msvc.def)

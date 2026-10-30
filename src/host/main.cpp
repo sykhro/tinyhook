@@ -2,6 +2,7 @@
 #include "log.hpp"
 #include <spdlog/spdlog.h>
 #include "th/websocket.hpp"
+#include "th/selection.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -237,7 +238,7 @@ namespace {
     }
 
     enum class State {
-        http,auth,catalog,config_request,producer,viewer,closing
+        http,auth,catalog,config_request,producer,viewer,selection_listener,selection_request,selection_wait,closing
     };
 
     struct Peer {
@@ -247,6 +248,7 @@ namespace {
         std::size_t sent{};
         bool dead=false;
         Profile* profile{};
+        std::uint64_t id{},requester{};
 
         Clock::time_point since=Clock::now();
 
@@ -290,6 +292,8 @@ namespace {
         std::vector<Profile> profiles;
         Bytes empty_config=encode_specs({});
         std::vector<std::unique_ptr<Peer>> peers;
+
+        std::uint64_t next_peer_id=1;
 
         std::string stdin_buffer;
         int stdin_flags=-1;
@@ -336,6 +340,17 @@ namespace {
                 return a.id<b.id;
             });
             return items;
+        }
+
+        void selection_reply(Peer& p,const SelectionResult& result) {
+            p.queue(framed(encode_selection_result(result)));
+            p.close_after_flush();
+        }
+
+        void finish_selection(Peer& worker,const SelectionResult& result) {
+            for(auto& peer:peers)if(peer->id==worker.requester&&!peer->dead&&peer->state==State::selection_wait)
+                selection_reply(*peer,result);
+            worker.requester=0;
         }
 
         Script* stdin_script() {
@@ -446,6 +461,20 @@ namespace {
                             p.state=State::config_request;
                             p.since=Clock::now();
                         }
+                        else if(role==selection_listener_role){
+                            for(const auto& peer:peers)if(peer.get()!=&p&&!peer->dead&&peer->state==State::selection_listener){
+                                p.queue("BUSY");
+                                p.close_after_flush();
+                                return;
+                            }
+                            p.state=State::selection_listener;
+                            p.queue("OKAY");
+                            spdlog::info("window-selection client connected");
+                        }
+                        else if(role==selection_request_role){
+                            p.state=State::selection_request;
+                            p.since=Clock::now();
+                        }
                         else throw Error("unknown agent role");
                     }
                 }
@@ -474,6 +503,35 @@ namespace {
                         p.close_after_flush();
                         return;
                     }
+                    if(p.state==State::selection_request) {
+                        std::span<const std::uint8_t> payload;
+                        if(!framed_input(p,payload))break;
+                        auto title=decode_selection(payload);
+                        p.consume(4+payload.size());
+                        Peer* worker=nullptr;
+                        for(auto& peer:peers)if(!peer->dead&&peer->state==State::selection_listener)worker=peer.get();
+                        if(!worker)selection_reply(p,{false,"Run th-client listen in the game's bottle first."});
+                        else if(worker->requester)selection_reply(p,{false,"An attachment is already in progress."});
+                        else {
+                            worker->requester=p.id;
+                            worker->since=Clock::now();
+                            worker->queue(framed(encode_selection(title)));
+                            p.state=State::selection_wait;
+                            p.since=Clock::now();
+                            spdlog::info("selected window: {}",title);
+                        }
+                        return;
+                    }
+                    if(p.state==State::selection_listener) {
+                        if(!p.requester)throw Error("unsolicited selection result");
+                        std::span<const std::uint8_t> payload;
+                        if(!framed_input(p,payload))break;
+                        auto result=decode_selection_result(payload);
+                        p.consume(4+payload.size());
+                        finish_selection(p,result);
+                        continue;
+                    }
+                    if(p.state==State::selection_wait)throw Error("selection request already submitted");
                     if(p.state==State::producer) {
                         if(p.input.size()<4)break;
                         Reader r(p.input);
@@ -660,9 +718,16 @@ namespace {
 
                     auto age=Clock::now()-p.since;
 
-                    if((p.state==State::http||p.state==State::auth||p.state==State::catalog||p.state==State::config_request)&&age>std::chrono::seconds(5))p.dead=true;
+                    if((p.state==State::http||p.state==State::auth||p.state==State::catalog||p.state==State::config_request||p.state==State::selection_request)&&age>std::chrono::seconds(5))p.dead=true;
 
                     if(p.state==State::closing&&(p.output.empty()||age>std::chrono::seconds(2)))p.dead=true;
+                }
+
+                for(auto& peer:peers)if(peer->state==State::selection_listener&&peer->requester){
+                    if(peer->dead||Clock::now()-peer->since>std::chrono::seconds(60)){
+                        finish_selection(*peer,{false,"Window-selection client disconnected or timed out. Check the client before trying again."});
+                        peer->dead=true;
+                    }
                 }
 
                 peers.erase(std::remove_if(peers.begin(),peers.end(),[](auto& p){
@@ -680,6 +745,7 @@ namespace {
                         try{
                             nonblock(fd);
                             peers.push_back(std::make_unique<Peer>(fd,i==0?State::http:State::auth));
+                            peers.back()->id=next_peer_id++;
                         }
                         catch(...){
                             close(fd);

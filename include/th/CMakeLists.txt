@@ -9,6 +9,7 @@ target_sources(
         FILE_SET HEADERS
         BASE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/.."
         FILES
+            selection.hpp
             protocol.hpp
             websocket.hpp
             gateway.hpp

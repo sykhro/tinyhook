@@ -19,12 +19,26 @@ int main() {
 
     spdlog::info("Leave running; attach with th-client using scripts/demo.luau (x64) or scripts/demo-x86.luau (x86). Ctrl+C exits.");
 
+    HWND window=CreateWindowExW(0,L"STATIC",L"TinyHook fixture 日本語",WS_OVERLAPPEDWINDOW|WS_VISIBLE,
+        CW_USEDEFAULT,CW_USEDEFAULT,420,180,nullptr,nullptr,GetModuleHandleW(nullptr),nullptr);
+    if(!window)return 1;
+
     const wchar_t* lines[]={
         L"これはテストです。",L"日本語の文章を取得しました。",L"同じ文章です。",L"同じ文章です。",L"次の文章へ進みましょう。"
     };
 
-    for(unsigned i=0;;++i){
-        th_demo_text(lines[i%5]);
-        Sleep(1500);
+    unsigned i=0;
+    auto next=GetTickCount64();
+    while(IsWindow(window)){
+        MSG message{};
+        while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)){
+            if(message.message==WM_QUIT)return 0;
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+        auto now=GetTickCount64();
+        if(now>=next){th_demo_text(lines[i++%5]);next=now+1500;}
+        MsgWaitForMultipleObjects(0,nullptr,FALSE,static_cast<DWORD>(next-now),QS_ALLINPUT);
     }
+    return 0;
 }

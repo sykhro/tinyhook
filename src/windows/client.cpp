@@ -2,6 +2,8 @@
 #include "log.hpp"
 #include <spdlog/spdlog.h>
 #include "scan.hpp"
+#include "th/selection.hpp"
+#include <exception>
 #include <algorithm>
 #include <filesystem>
 #include <cstring>
@@ -290,41 +292,61 @@ namespace {
         }
         while(Process32NextW(snapshot.h,&p));
     }
-}
+    using Options=std::map<std::wstring,std::wstring>;
 
-int wmain(int argc,wchar_t**argv) {
-    th::log::configure_console("th-client");
-    SetConsoleOutputCP(CP_UTF8);
-
-    try {
-        if(argc<2||std::wstring_view(argv[1])==L"--help") {
-            std::cout<<"th-client list\n"
-            "th-client probe --pid WINDOWS_PID --token-file FILE [--port 9002] [--engine PROFILE_ID]\n"
-            "th-client attach --pid WINDOWS_PID [--dll th-hook.dll] --token-file FILE [--port 9002] [--engine PROFILE_ID]\n"
-            "th-client stop --pid WINDOWS_PID [--dll th-hook.dll]\n"
-            "Use the same Wine/CrossOver bottle as the game. This client targets "<<build_arch_name<<".\n";
-            return argc<2?1:0;
+    std::string read_token(const Options& opts) {
+        std::string token;
+        if(opts.contains(L"--token"))token=utf8(opts.at(L"--token"));
+        else if(opts.contains(L"--token-file")){
+            std::ifstream f(std::filesystem::path(opts.at(L"--token-file")),std::ios::binary);
+            if(!f)throw Error("cannot read token file");
+            char bytes[67]{};
+            f.read(bytes,sizeof(bytes));
+            token.assign(bytes,static_cast<std::size_t>(f.gcount()));
+            while(!token.empty()&&(token.back()=='\r'||token.back()=='\n'))token.pop_back();
         }
+        if(!valid_token(token))throw Error("supply --token-file or a 64-character lowercase hex --token");
+        return token;
+    }
 
-        std::wstring command=argv[1];
-        if(command==L"list"){
-            if(argc!=2)throw th::Error("list takes no options");
-            list();
-            return 0;
+    std::uint16_t read_port(const Options& opts) {
+        auto port=opts.contains(L"--port")?parse_pid(opts.at(L"--port")):default_agent_port;
+        if(port>65535)throw Error("port out of range");
+        return static_cast<std::uint16_t>(port);
+    }
+
+    DWORD window_process(std::wstring_view title) {
+        if(title.empty()||utf8(title).size()>1024)throw Error("invalid window title");
+        struct Search {
+            std::wstring_view title;
+            std::vector<DWORD> pids;
+            std::exception_ptr failure;
+            static BOOL CALLBACK visit(HWND window,LPARAM data) {
+                auto& search=*reinterpret_cast<Search*>(data);
+                try {
+                    if(!IsWindowVisible(window))return TRUE;
+                    wchar_t name[1025]{};
+                    const auto count=GetWindowTextW(window,name,1025);
+                    if(count<=0||GetWindowTextLengthW(window)>1024)return TRUE;
+                    if(std::wstring_view(name,static_cast<std::size_t>(count))!=search.title)return TRUE;
+                    DWORD pid{};
+                    GetWindowThreadProcessId(window,&pid);
+                    if(pid&&std::find(search.pids.begin(),search.pids.end(),pid)==search.pids.end())search.pids.push_back(pid);
+                    return TRUE;
+                }
+                catch(...){search.failure=std::current_exception();return FALSE;}
+            }
+        } search{title,{},{}};
+        if(!EnumWindows(Search::visit,reinterpret_cast<LPARAM>(&search))){
+            if(search.failure)std::rethrow_exception(search.failure);
+            throw Error(error("EnumWindows failed"));
         }
+        if(search.pids.empty())throw Error("No window with that title in this bottle. Keep the game visible and pick it again.");
+        if(search.pids.size()!=1)throw Error("Multiple processes have that window title. Use --pid to choose the target.");
+        return search.pids.front();
+    }
 
-        if(command!=L"attach"&&command!=L"stop"&&command!=L"probe")throw th::Error("unknown command");
-
-        std::map<std::wstring,std::wstring> opts;
-
-        for(int i=2;i<argc;++i){
-            std::wstring key=argv[i];
-            if(key!=L"--pid"&&key!=L"--dll"&&key!=L"--token-file"&&key!=L"--token"&&key!=L"--port"&&key!=L"--engine")throw th::Error("unknown option");
-            if(++i>=argc||!opts.emplace(key,argv[i]).second)throw th::Error("missing/duplicate option");
-        }
-
-        if(!opts.contains(L"--pid"))throw th::Error("--pid is required (use th-client list)");
-        auto pid=parse_pid(opts.at(L"--pid"));
+    int run_action(std::wstring_view command,const Options& opts,DWORD pid) {
         if(pid==GetCurrentProcessId())throw th::Error("refusing to attach to the injector itself");
 
         auto rights=PROCESS_QUERY_INFORMATION|PROCESS_VM_READ;
@@ -355,23 +377,8 @@ int wmain(int argc,wchar_t**argv) {
 
         if(loaded.modBaseAddr)throw th::Error("hook DLL already loaded; restart target before attaching again");
 
-        std::string token;
-
-        if(opts.contains(L"--token"))token=th::win::utf8(opts.at(L"--token"));
-
-        else if(opts.contains(L"--token-file")){
-            std::ifstream f(std::filesystem::path(opts.at(L"--token-file")),std::ios::binary);
-            if(!f)throw th::Error("cannot read token file");
-            char b[67]{};
-            f.read(b,sizeof(b));
-            token.assign(b,static_cast<std::size_t>(f.gcount()));
-            while(!token.empty()&&(token.back()=='\r'||token.back()=='\n'))token.pop_back();
-        }
-
-        if(!th::valid_token(token))throw th::Error("supply --token-file or a 64-character lowercase hex --token");
-
-        auto port=opts.contains(L"--port")?parse_pid(opts.at(L"--port")):th::default_agent_port;
-        if(port>65535)throw th::Error("port out of range");
+        auto token=read_token(opts);
+        auto port=read_port(opts);
 
         th::win::Wsa wsa;
         auto process_name=process_executable(pid);
@@ -414,6 +421,81 @@ int wmain(int argc,wchar_t**argv) {
 
         std::cout<<"Attached to Windows PID "<<pid<<". Watch th-host for connection/capture diagnostics.\n";
         return 0;
+    }
+
+    int listen(const Options& opts) {
+        auto token=read_token(opts);
+        auto port=read_port(opts);
+        Wsa wsa;
+        auto socket=connect_local(port);
+        send_all(socket.s,hello(selection_listener_role,token));
+        std::array<std::uint8_t,4> ack{};
+        recv_all(socket.s,ack);
+        if(std::string_view(reinterpret_cast<const char*>(ack.data()),ack.size())!="OKAY")
+            throw Error("Another window-selection client is connected. Stop it before switching bottles.");
+        DWORD timeout=0;
+        if(setsockopt(socket.s,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&timeout),sizeof(timeout)))
+            throw Error(error("cannot set selection receive timeout"));
+        std::cout<<"Ready. Run th-pick on the Mac, then click the game window."<<std::endl;
+        for(;;){
+            auto title=decode_selection(recv_frame(socket.s));
+            SelectionResult result{false,{}};
+            try {
+                auto pid=window_process(wide(title));
+                run_action(L"attach",opts,pid);
+                result={true,"Attached to "+title+" (Windows PID "+std::to_string(pid)+")."};
+            }
+            catch(const std::exception& e){
+                result.message=e.what();
+                if(result.message.size()>4096||!valid_utf8(result.message))result.message="Attachment failed; see the client log.";
+                spdlog::error("{}",e.what());
+            }
+            send_all(socket.s,framed(encode_selection_result(result)));
+        }
+    }
+
+}
+
+int wmain(int argc,wchar_t**argv) {
+    th::log::configure_console("th-client");
+    SetConsoleOutputCP(CP_UTF8);
+
+    try {
+        if(argc<2||std::wstring_view(argv[1])==L"--help") {
+            std::cout<<"th-client list\n"
+            "th-client probe --pid WINDOWS_PID --token-file FILE [--port 9002] [--engine PROFILE_ID]\n"
+            "th-client attach --pid WINDOWS_PID [--dll th-hook.dll] --token-file FILE [--port 9002] [--engine PROFILE_ID]\n"
+            "th-client stop --pid WINDOWS_PID [--dll th-hook.dll]\n"
+            "th-client listen --token-file FILE [--dll th-hook.dll] [--port 9002] [--engine PROFILE_ID]\n"
+            "Use --window TITLE instead of --pid to select by window title.\n"
+            "Use the same Wine/CrossOver bottle as the game. This client targets "<<build_arch_name<<".\n";
+            return argc<2?1:0;
+        }
+
+        std::wstring command=argv[1];
+        if(command==L"list"){
+            if(argc!=2)throw th::Error("list takes no options");
+            list();
+            return 0;
+        }
+
+        if(command!=L"attach"&&command!=L"stop"&&command!=L"probe"&&command!=L"listen")throw th::Error("unknown command");
+
+        std::map<std::wstring,std::wstring> opts;
+
+        for(int i=2;i<argc;++i){
+            std::wstring key=argv[i];
+            if(key!=L"--pid"&&key!=L"--dll"&&key!=L"--token-file"&&key!=L"--token"&&key!=L"--port"&&key!=L"--engine"&&key!=L"--window")throw th::Error("unknown option");
+            if(++i>=argc||!opts.emplace(key,argv[i]).second)throw th::Error("missing/duplicate option");
+        }
+
+        if(command==L"listen"){
+            if(opts.contains(L"--pid")||opts.contains(L"--window"))throw Error("listen takes no target; choose it with th-pick");
+            return listen(opts);
+        }
+        if(opts.contains(L"--pid")==opts.contains(L"--window"))throw Error("choose --pid WINDOWS_PID or --window TITLE");
+        auto target=opts.contains(L"--pid")?parse_pid(opts.at(L"--pid")):window_process(opts.at(L"--window"));
+        return run_action(command,opts,target);
     }
     catch(const std::exception& e){
         spdlog::error("{}",e.what());

@@ -87,7 +87,26 @@ For game capture, start the host with the engine profiles:
 ```
 
 Copy the matching Windows helpers and the token file into a directory accessible
-to the game. In the same Windows environment or Wine/CrossOver bottle, run:
+to the game. For a native macOS window picker, run this inside the game's bottle:
+
+```bat
+th-client.exe listen --token-file session.token
+```
+
+Then, on the Mac:
+
+```sh
+./build/macos-small/bin/th-pick --token-file "$PWD/session.token"
+```
+
+Hover to highlight a window and click to attach. Escape or right-click cancels.
+macOS may ask for Screen Recording permission so the picker can read window
+titles. The client matches the title within its bottle, checks the engine profile,
+and reports the attachment result. Keep one selection client connected at a time;
+stop it before switching bottles. Duplicate titles across processes produce an
+error. Use the client and DLL matching the game's architecture.
+
+To choose a Windows PID manually instead, run in the game's bottle:
 
 ```bat
 th-client.exe list
