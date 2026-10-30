@@ -1,0 +1,676 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 30,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "_base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_CXX_STANDARD": "20",
+        "CMAKE_CXX_STANDARD_REQUIRED": true,
+        "CMAKE_CXX_EXTENSIONS": false,
+        "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+        "CMAKE_RUNTIME_OUTPUT_DIRECTORY": "${sourceDir}/build/${presetName}/bin",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/stage/${presetName}",
+        "CMAKE_BUILD_TYPE": "MinSizeRel",
+        "CMAKE_CXX_SCAN_FOR_MODULES": false
+      },
+      "displayName": "Internal · Base",
+      "description": "Shared baseline for TinyHook presets: Ninja, C++20, MinSizeRel, compile_commands.json, and per-preset build/install directories."
+    },
+    {
+      "name": "_fetch",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_PROJECT_TOP_LEVEL_INCLUDES": "${sourceDir}/infra/cmake/use-fetch-content.cmake"
+      },
+      "displayName": "Internal · Fetch dependencies",
+      "description": "Enables TinyHook's top-level dependency provider so find_package() can resolve pinned development dependencies through FetchContent."
+    },
+    {
+      "name": "_unix",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -ffunction-sections -fdata-sections"
+      },
+      "displayName": "Internal · Unix warnings",
+      "description": "Applies the common GCC/Clang warning and section-splitting flags used by Unix-like development presets."
+    },
+    {
+      "name": "macos-small",
+      "inherits": [
+        "_base",
+        "_fetch",
+        "_unix"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-dead_strip",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "macOS · Small",
+      "description": "Configure the native macOS host and tools for a size-optimized MinSizeRel build with fetched dependencies, dead stripping, and IPO."
+    },
+    {
+      "name": "macos-vm",
+      "inherits": "macos-small",
+      "cacheVariables": {
+        "TINYHOOK_WITH_COMPILER": false,
+        "TINYHOOK_BUILD_COMPILER_TOOL": true
+      },
+      "displayName": "macOS · VM-only runtime",
+      "description": "Configure the macOS runtime without embedding the Luau compiler; build the separate th-compile tool for ahead-of-time script compilation."
+    },
+    {
+      "name": "linux-small",
+      "inherits": [
+        "_base",
+        "_fetch",
+        "_unix"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      },
+      "cacheVariables": {
+        "CMAKE_EXE_LINKER_FLAGS": "-Wl,--gc-sections",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "Linux · Small",
+      "description": "Configure the native Linux host and tools for a size-optimized MinSizeRel build with fetched dependencies, section garbage collection, and IPO."
+    },
+    {
+      "name": "linux-relay",
+      "inherits": [
+        "linux-small"
+      ],
+      "cacheVariables": {
+        "TINYHOOK_WITH_LUAU": false
+      },
+      "displayName": "Linux · Relay-only",
+      "description": "Configure the minimal Linux relay without Luau support; useful for transport/core testing and footprint measurements."
+    },
+    {
+      "name": "linux-sanitize",
+      "inherits": "linux-relay",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": false,
+        "CMAKE_CXX_FLAGS": "-Wall -Wextra -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      },
+      "displayName": "Linux · ASan + UBSan",
+      "description": "Configure a Clang debug build of the relay with AddressSanitizer and UndefinedBehaviorSanitizer enabled."
+    },
+    {
+      "name": "system",
+      "inherits": "_base",
+      "displayName": "System packages",
+      "description": "Configure TinyHook using only externally installed packages; the project dependency provider is not enabled."
+    },
+    {
+      "name": "windows-x86",
+      "inherits": [
+        "_base",
+        "_fetch",
+        "_unix"
+      ],
+      "toolchainFile": "${sourceDir}/infra/cmake/toolchains/mingw-x86.cmake",
+      "cacheVariables": {
+        "CMAKE_EXE_LINKER_FLAGS": "-static -static-libgcc -static-libstdc++ -Wl,--gc-sections",
+        "CMAKE_SHARED_LINKER_FLAGS": "-static -static-libgcc -static-libstdc++ -Wl,--gc-sections",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": false,
+        "CMAKE_CXX_FLAGS_MINSIZEREL": "-Os -DNDEBUG -fno-declone-ctor-dtor"
+      },
+      "displayName": "Windows x86 · MinGW",
+      "description": "Cross-compile 32-bit Windows client, hook DLL, demo, and tests with MinGW. Uses static runtimes and the GCC i686 -fno-declone-ctor-dtor workaround."
+    },
+    {
+      "name": "msvc-x86",
+      "inherits": [
+        "_base",
+        "_fetch"
+      ],
+      "generator": "Visual Studio 17 2022",
+      "architecture": "Win32",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "/W4 /utf-8 /permissive-",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "Windows x86 · MSVC",
+      "description": "Configure a native 32-bit Windows build with Visual Studio 2022, static MSVC runtime, UTF-8 source handling, and IPO."
+    },
+    {
+      "name": "windows-x64",
+      "inherits": [
+        "_base",
+        "_fetch",
+        "_unix"
+      ],
+      "toolchainFile": "${sourceDir}/infra/cmake/toolchains/mingw-x64.cmake",
+      "cacheVariables": {
+        "CMAKE_EXE_LINKER_FLAGS": "-static -static-libgcc -static-libstdc++ -Wl,--gc-sections",
+        "CMAKE_SHARED_LINKER_FLAGS": "-static -static-libgcc -static-libstdc++ -Wl,--gc-sections",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": false
+      },
+      "displayName": "Windows x64 · MinGW",
+      "description": "Cross-compile 64-bit Windows client, hook DLL, demo, and tests with MinGW using static GCC/libstdc++ runtimes."
+    },
+    {
+      "name": "msvc-x64",
+      "inherits": [
+        "_base",
+        "_fetch"
+      ],
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_FLAGS": "/W4 /utf-8 /permissive-",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "Windows x64 · MSVC",
+      "description": "Configure a native 64-bit Windows build with Visual Studio 2022, static MSVC runtime, UTF-8 source handling, and IPO."
+    },
+    {
+      "name": "clang-x86",
+      "inherits": [
+        "_base",
+        "_fetch"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_C_COMPILER_TARGET": "i686-pc-windows-msvc",
+        "CMAKE_CXX_COMPILER_TARGET": "i686-pc-windows-msvc",
+        "CMAKE_LINKER": "lld-link",
+        "CMAKE_CXX_FLAGS": "/W4 /utf-8 /permissive-",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "Windows x86 · Clang",
+      "description": "Native Windows x86 build with clang-cl, LLD, and the static MSVC runtime. Run in a matching MSVC developer environment."
+    },
+    {
+      "name": "clang-x64",
+      "inherits": [
+        "_base",
+        "_fetch"
+      ],
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang-cl",
+        "CMAKE_CXX_COMPILER": "clang-cl",
+        "CMAKE_C_COMPILER_TARGET": "x86_64-pc-windows-msvc",
+        "CMAKE_CXX_COMPILER_TARGET": "x86_64-pc-windows-msvc",
+        "CMAKE_LINKER": "lld-link",
+        "CMAKE_CXX_FLAGS": "/W4 /utf-8 /permissive-",
+        "CMAKE_MSVC_RUNTIME_LIBRARY": "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+        "CMAKE_INTERPROCEDURAL_OPTIMIZATION": true
+      },
+      "displayName": "Windows x64 · Clang",
+      "description": "Native Windows x64 build with clang-cl, LLD, and the static MSVC runtime. Run in a matching MSVC developer environment."
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "macos-small",
+      "configurePreset": "macos-small",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · macOS · Small",
+      "description": "Build the targets from the macOS · Small configure preset."
+    },
+    {
+      "name": "macos-vm",
+      "configurePreset": "macos-vm",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · macOS · VM-only runtime",
+      "description": "Build the targets from the macOS · VM-only runtime configure preset."
+    },
+    {
+      "name": "linux-small",
+      "configurePreset": "linux-small",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Linux · Small",
+      "description": "Build the targets from the Linux · Small configure preset."
+    },
+    {
+      "name": "linux-relay",
+      "configurePreset": "linux-relay",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Linux · Relay-only",
+      "description": "Build the targets from the Linux · Relay-only configure preset."
+    },
+    {
+      "name": "linux-sanitize",
+      "configurePreset": "linux-sanitize",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Linux · ASan + UBSan",
+      "description": "Build the targets from the Linux · ASan + UBSan configure preset."
+    },
+    {
+      "name": "system",
+      "configurePreset": "system",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · System packages",
+      "description": "Build the targets from the System packages configure preset."
+    },
+    {
+      "name": "windows-x86",
+      "configurePreset": "windows-x86",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Windows x86 · MinGW",
+      "description": "Build the targets from the Windows x86 · MinGW configure preset."
+    },
+    {
+      "name": "msvc-x86",
+      "configurePreset": "msvc-x86",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Windows x86 · MSVC",
+      "description": "Build the targets from the Windows x86 · MSVC configure preset."
+    },
+    {
+      "name": "windows-x64",
+      "configurePreset": "windows-x64",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Windows x64 · MinGW",
+      "description": "Build the targets from the Windows x64 · MinGW configure preset."
+    },
+    {
+      "name": "msvc-x64",
+      "configurePreset": "msvc-x64",
+      "configuration": "MinSizeRel",
+      "displayName": "Build · Windows x64 · MSVC",
+      "description": "Build the targets from the Windows x64 · MSVC configure preset."
+    },
+    {
+      "name": "clang-x86",
+      "configurePreset": "clang-x86",
+      "configuration": "MinSizeRel"
+    },
+    {
+      "name": "clang-x64",
+      "configurePreset": "clang-x64",
+      "configuration": "MinSizeRel"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "macos-small",
+      "configurePreset": "macos-small",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · macOS · Small",
+      "description": "Run the TinyHook test suite for the macOS · Small build and show test output on failure."
+    },
+    {
+      "name": "macos-vm",
+      "configurePreset": "macos-vm",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · macOS · VM-only runtime",
+      "description": "Run the TinyHook test suite for the macOS · VM-only runtime build and show test output on failure."
+    },
+    {
+      "name": "linux-small",
+      "configurePreset": "linux-small",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · Linux · Small",
+      "description": "Run the TinyHook test suite for the Linux · Small build and show test output on failure."
+    },
+    {
+      "name": "linux-relay",
+      "configurePreset": "linux-relay",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · Linux · Relay-only",
+      "description": "Run the TinyHook test suite for the Linux · Relay-only build and show test output on failure."
+    },
+    {
+      "name": "linux-sanitize",
+      "configurePreset": "linux-sanitize",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · Linux · ASan + UBSan",
+      "description": "Run the TinyHook test suite for the Linux · ASan + UBSan build and show test output on failure."
+    },
+    {
+      "name": "system",
+      "configurePreset": "system",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · System packages",
+      "description": "Run the TinyHook test suite for the System packages build and show test output on failure."
+    },
+    {
+      "name": "msvc-x86",
+      "configurePreset": "msvc-x86",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · Windows x86 · MSVC",
+      "description": "Run the TinyHook test suite for the Windows x86 · MSVC build on Windows."
+    },
+    {
+      "name": "msvc-x64",
+      "configurePreset": "msvc-x64",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      },
+      "displayName": "Test · Windows x64 · MSVC",
+      "description": "Run the TinyHook test suite for the Windows x64 · MSVC build on Windows."
+    },
+    {
+      "name": "clang-x86",
+      "configurePreset": "clang-x86",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "clang-x64",
+      "configurePreset": "clang-x64",
+      "configuration": "MinSizeRel",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "macos-small",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "macos-small"
+        },
+        {
+          "type": "build",
+          "name": "macos-small"
+        },
+        {
+          "type": "test",
+          "name": "macos-small"
+        }
+      ],
+      "displayName": "Workflow · macOS · Small",
+      "description": "Configure, build, and test macOS · Small in one CMake workflow."
+    },
+    {
+      "name": "macos-vm",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "macos-vm"
+        },
+        {
+          "type": "build",
+          "name": "macos-vm"
+        },
+        {
+          "type": "test",
+          "name": "macos-vm"
+        }
+      ],
+      "displayName": "Workflow · macOS · VM-only runtime",
+      "description": "Configure, build, and test macOS · VM-only runtime in one CMake workflow."
+    },
+    {
+      "name": "linux-small",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-small"
+        },
+        {
+          "type": "build",
+          "name": "linux-small"
+        },
+        {
+          "type": "test",
+          "name": "linux-small"
+        }
+      ],
+      "displayName": "Workflow · Linux · Small",
+      "description": "Configure, build, and test Linux · Small in one CMake workflow."
+    },
+    {
+      "name": "linux-relay",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-relay"
+        },
+        {
+          "type": "build",
+          "name": "linux-relay"
+        },
+        {
+          "type": "test",
+          "name": "linux-relay"
+        }
+      ],
+      "displayName": "Workflow · Linux · Relay-only",
+      "description": "Configure, build, and test Linux · Relay-only in one CMake workflow."
+    },
+    {
+      "name": "linux-sanitize",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "linux-sanitize"
+        },
+        {
+          "type": "build",
+          "name": "linux-sanitize"
+        },
+        {
+          "type": "test",
+          "name": "linux-sanitize"
+        }
+      ],
+      "displayName": "Workflow · Linux · ASan + UBSan",
+      "description": "Configure, build, and test Linux · ASan + UBSan in one CMake workflow."
+    },
+    {
+      "name": "system",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "system"
+        },
+        {
+          "type": "build",
+          "name": "system"
+        },
+        {
+          "type": "test",
+          "name": "system"
+        }
+      ],
+      "displayName": "Workflow · System packages",
+      "description": "Configure, build, and test System packages in one CMake workflow."
+    },
+    {
+      "name": "windows-x86",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-x86"
+        },
+        {
+          "type": "build",
+          "name": "windows-x86"
+        }
+      ],
+      "displayName": "Workflow · Windows x86 · MinGW",
+      "description": "Configure and build Windows x86 · MinGW. Tests are not run because the cross-compiled Windows binaries are not executable on the host."
+    },
+    {
+      "name": "msvc-x86",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "msvc-x86"
+        },
+        {
+          "type": "build",
+          "name": "msvc-x86"
+        },
+        {
+          "type": "test",
+          "name": "msvc-x86"
+        }
+      ],
+      "displayName": "Workflow · Windows x86 · MSVC",
+      "description": "Configure, build, and test Windows x86 · MSVC in one CMake workflow."
+    },
+    {
+      "name": "windows-x64",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "windows-x64"
+        },
+        {
+          "type": "build",
+          "name": "windows-x64"
+        }
+      ],
+      "displayName": "Workflow · Windows x64 · MinGW",
+      "description": "Configure and build Windows x64 · MinGW. Tests are not run because the cross-compiled Windows binaries are not executable on the host."
+    },
+    {
+      "name": "msvc-x64",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "msvc-x64"
+        },
+        {
+          "type": "build",
+          "name": "msvc-x64"
+        },
+        {
+          "type": "test",
+          "name": "msvc-x64"
+        }
+      ],
+      "displayName": "Workflow · Windows x64 · MSVC",
+      "description": "Configure, build, and test Windows x64 · MSVC in one CMake workflow."
+    },
+    {
+      "name": "clang-x86",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "clang-x86"
+        },
+        {
+          "type": "build",
+          "name": "clang-x86"
+        },
+        {
+          "type": "test",
+          "name": "clang-x86"
+        }
+      ]
+    },
+    {
+      "name": "clang-x64",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "clang-x64"
+        },
+        {
+          "type": "build",
+          "name": "clang-x64"
+        },
+        {
+          "type": "test",
+          "name": "clang-x64"
+        }
+      ]
+    }
+  ]
+}

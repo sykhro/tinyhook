@@ -1,0 +1,43 @@
+{
+  "Luau": {
+    "name": "luau",
+    "git_repository": "https://github.com/luau-lang/luau.git",
+    "git_tag": "c0e346edd89066b44dca174c9f54ce84c746a540",
+    "options": {
+      "LUAU_BUILD_CLI": false,
+      "LUAU_BUILD_TESTS": false,
+      "LUAU_BUILD_WEB": false,
+      "LUAU_BUILD_SHARED": false
+    },
+    "license_file": "LICENSE.txt"
+  },
+  "minhook": {
+    "name": "minhook",
+    "git_repository": "https://github.com/TsudaKageyu/minhook.git",
+    "git_tag": "c3fcafdc10146beb5919319d0683e44e3c30d537",
+    "options": {
+      "BUILD_SHARED_LIBS": false
+    },
+    "license_file": "LICENSE.txt"
+  },
+  "spdlog": {
+    "name": "spdlog",
+    "git_repository": "https://github.com/gabime/spdlog.git",
+    "git_tag": "79524ddd08a4ec981b7fea76afd08ee05f83755d",
+    "license_file": "LICENSE",
+    "options": {
+      "BUILD_SHARED_LIBS": false,
+      "SPDLOG_BUILD_SHARED": false,
+      "SPDLOG_BUILD_EXAMPLE": false,
+      "SPDLOG_BUILD_EXAMPLE_HO": false,
+      "SPDLOG_BUILD_TESTS": false,
+      "SPDLOG_BUILD_TESTS_HO": false,
+      "SPDLOG_BUILD_BENCH": false,
+      "SPDLOG_BUILD_WARNINGS": false,
+      "SPDLOG_INSTALL": false,
+      "SPDLOG_USE_STD_FORMAT": false,
+      "SPDLOG_FMT_EXTERNAL": false,
+      "SPDLOG_FMT_EXTERNAL_HO": false
+    }
+  }
+}

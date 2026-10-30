@@ -1,0 +1,95 @@
+name: build-and-test
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.arch }} / Clang
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: x64
+          - os: macos-latest
+            arch: arm64
+          - os: windows-latest
+            arch: x86
+          - os: windows-latest
+            arch: x64
+    env:
+      CMAKE_BUILD_PARALLEL_LEVEL: 3
+      CTEST_PARALLEL_LEVEL: 2
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+      - name: Resolve latest stable LLVM release
+        id: llvm
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const {data} = await github.rest.repos.getLatestRelease({owner: 'llvm', repo: 'llvm-project'});
+            const version = data.tag_name.replace(/^llvmorg-/, '');
+            if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error(`Unexpected LLVM release: ${data.tag_name}`);
+            core.setOutput('version', version);
+      - name: Set up Clang and Ninja
+        uses: aminya/setup-cpp@v1
+        with:
+          compiler: llvm-${{ steps.llvm.outputs.version }}
+          ninja: true
+      - name: Install latest stable CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: latest
+      - name: Set up Windows SDK and runtime
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.arch }}
+      - name: Select Clang explicitly
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            echo "CC=clang-cl" >> "$GITHUB_ENV"
+            echo "CXX=clang-cl" >> "$GITHUB_ENV"
+            clang-cl --version
+          else
+            echo "CC=$(command -v clang)" >> "$GITHUB_ENV"
+            echo "CXX=$(command -v clang++)" >> "$GITHUB_ENV"
+            clang --version
+          fi
+          cmake --version
+          ninja --version
+      - name: Build and test Linux variants
+        if: runner.os == 'Linux'
+        run: |
+          cmake --workflow --preset linux-relay
+          cmake --workflow --preset linux-sanitize
+          cmake --workflow --preset linux-small
+          cmake --install build/linux-small --prefix dist --strip --component tinyhook-runtime
+      - name: Build and test macOS variants
+        if: runner.os == 'macOS'
+        run: |
+          cmake --workflow --preset macos-small
+          cmake --workflow --preset macos-vm
+          mkdir -p compiled-profiles
+          build/macos-vm/bin/th-compile scripts/engines/siglusengine4-x86.luau compiled-profiles/siglusengine4-x86.luauc
+          build/macos-vm/bin/th-host --script-dir compiled-profiles --check
+          cmake --install build/macos-vm --prefix dist --strip --component tinyhook-runtime
+      - name: Build and test Windows with clang-cl
+        if: runner.os == 'Windows'
+        run: |
+          cmake --workflow --preset clang-${{ matrix.arch }}
+          cmake --install build/clang-${{ matrix.arch }} --prefix dist --component tinyhook-runtime
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tinyhook-${{ runner.os }}-${{ matrix.arch }}
+          path: dist/
+          if-no-files-found: error

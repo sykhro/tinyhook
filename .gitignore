@@ -1,0 +1,9 @@
+build*/
+dist/
+.tinyhook-token
+*.token
+__pycache__/
+stage/
+*.luauc
+CMakeUserPresets.json
+.DS_Store

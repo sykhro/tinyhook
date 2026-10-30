@@ -1,0 +1,4 @@
+LIBRARY th-hook
+EXPORTS
+    TinyHookStart=_TinyHookStart@4
+    TinyHookStop=_TinyHookStop@4
