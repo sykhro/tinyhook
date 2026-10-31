@@ -8,3 +8,4 @@ stage/
 CMakeUserPresets.json
 .DS_Store
 .venv/
+.traces/
